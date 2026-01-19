@@ -8,8 +8,9 @@ from io import StringIO
 st.set_page_config(
     page_title="E-Commerce Business Intelligence Dashboard",
     page_icon="📊",
-    layout="wide
+    layout="wide"
 )
+
 
 # ==================== LOAD & CLEAN DATA ====================
 @st.cache_data
