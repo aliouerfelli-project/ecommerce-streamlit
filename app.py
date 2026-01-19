@@ -1,7 +1,8 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import requests
+from io import StringIO
 
 # ============ CONFIG ============
 st.set_page_config(
@@ -13,8 +14,14 @@ st.set_page_config(
 # ============ LOAD DATA ============
 @st.cache_data
 def load_data():
+    # نحمّلو الداتا بطريقة يقبلها Streamlit Cloud
     url = "https://raw.githubusercontent.com/carrie1/ecommerce-data/master/data.csv"
-    data = pd.read_csv(url, encoding="ISO-8859-1")
+    
+    # تحميل الملف كـ text أولاً (يتجاوز القيود)
+    response = requests.get(url)
+    csv_data = StringIO(response.text)
+    
+    data = pd.read_csv(csv_data, encoding="ISO-8859-1")
     strategy = pd.read_csv("marketing_strategy_recommendations.csv")
 
     # Cleaning & Feature Engineering
@@ -127,4 +134,4 @@ fig4 = px.bar(
 )
 st.plotly_chart(fig4, use_container_width=True)
 
-st.success("🚀 Deployment Ready — Publish to Streamlit Cloud")
+st.success("🚀 Live Dashboard Ready")
