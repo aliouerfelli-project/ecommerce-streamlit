@@ -1,18 +1,19 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import requests
 from io import StringIO
 
 st.set_page_config(
-    page_title="E-Commerce Analytics Dashboard",
+    page_title="E-Commerce Business Intelligence Dashboard",
     page_icon="📊",
-    layout="wide"
+    layout="wide
 )
 
+# ==================== LOAD & CLEAN DATA ====================
 @st.cache_data
 def load_data():
-    # تحميل الداتا
     url = "https://raw.githubusercontent.com/carrie1/ecommerce-data/master/data.csv"
     response = requests.get(url)
     csv_data = StringIO(response.text)
@@ -20,130 +21,157 @@ def load_data():
     data = pd.read_csv(csv_data, encoding="ISO-8859-1")
     strategy = pd.read_csv("marketing_strategy_recommendations.csv")
 
-    # تنظيف أسماء الأعمدة (مهم)
+    # CLEANING
     data.columns = data.columns.str.strip()
+    data = data[data["Quantity"] > 0]
+    data = data[data["UnitPrice"] > 0]
+    data = data[~data["InvoiceNo"].astype(str).str.startswith("C")]
 
-    # إنشاء TotalPrice كان ما فماش
-    if "TotalPrice" not in data.columns:
-        if "Quantity" in data.columns and "UnitPrice" in data.columns:
-            data["TotalPrice"] = data["Quantity"] * data["UnitPrice"]
-        else:
-            data["TotalPrice"] = 0
-
-    # تحويل التاريخ
-    if "InvoiceDate" in data.columns:
-        data["InvoiceDate"] = pd.to_datetime(data["InvoiceDate"], errors="coerce")
+    # FEATURE ENGINEERING
+    data["TotalPrice"] = data["Quantity"] * data["UnitPrice"]
+    data["InvoiceDate"] = pd.to_datetime(data["InvoiceDate"], errors="coerce")
+    data["Month"] = data["InvoiceDate"].dt.to_period("M").astype(str)
 
     return data, strategy
 
 data, strategy = load_data()
 
-# ================== DASHBOARD ==================
-st.title("📊 E-Commerce Analytics Dashboard")
-st.markdown("**CRISP-DM | Business Analytics & Marketing Strategy Deployment**")
+# ==================== TITLE ====================
+st.title("🚀 E-Commerce Business Intelligence Dashboard (PRO)")
+st.markdown("""
+**CRISP-DM Deployment | Business Analytics | Marketing Strategy**
+""")
 
-# ========== FILTERS ==========
-st.sidebar.header("🔍 Filters")
+# ==================== SIDEBAR FILTERS ====================
+st.sidebar.header("🎯 Smart Filters")
 
-if "Country" in data.columns:
-    selected_country = st.sidebar.multiselect(
-        "Select Country",
-        options=data["Country"].dropna().unique(),
-        default=list(data["Country"].dropna().unique()[:3])
-    )
+countries = sorted(data["Country"].dropna().unique())
+selected_country = st.sidebar.multiselect(
+    "🌍 Select Country",
+    options=countries,
+    default=["United Kingdom"] if "United Kingdom" in countries else []
+)
+
+if selected_country:
     data = data[data["Country"].isin(selected_country)]
 
-# ========== KPIs ==========
-st.header("📌 Key Performance Indicators")
+# ==================== KPI SECTION ====================
+st.header("📌 Key Business KPIs")
 
 total_sales = float(data["TotalPrice"].sum())
+num_customers = data["CustomerID"].nunique()
+num_orders = data["InvoiceNo"].nunique()
+avg_order_value = total_sales / num_orders if num_orders > 0 else 0
 
-if "CustomerID" in data.columns:
-    num_customers = data["CustomerID"].nunique()
-else:
-    num_customers = len(data)
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("💰 Total Revenue", f"{total_sales:,.2f}")
+col2.metric("👥 Active Customers", num_customers)
+col3.metric("🧾 Total Orders", num_orders)
+col4.metric("📦 Avg Order Value", f"{avg_order_value:,.2f}")
 
-if "InvoiceNo" in data.columns:
-    avg_order_value = data.groupby("InvoiceNo")["TotalPrice"].sum().mean()
-else:
-    avg_order_value = 0
+# ==================== SALES OVER TIME (PRO) ====================
+st.subheader("📈 Revenue Trend (Monthly)")
 
-col1, col2, col3 = st.columns(3)
-col1.metric("💰 Total Sales", f"{total_sales:,.2f}")
-col2.metric("👥 Customers", num_customers)
-col3.metric("📦 Avg Order Value", f"{avg_order_value:,.2f}")
+sales_time = (
+    data.groupby("Month")["TotalPrice"]
+    .sum()
+    .reset_index()
+)
 
-# ========== TOP PRODUCTS ==========
-st.subheader("🛍️ Top 10 Products by Sales")
+fig_trend = px.line(
+    sales_time,
+    x="Month",
+    y="TotalPrice",
+    title="Monthly Revenue Evolution"
+)
+st.plotly_chart(fig_trend, use_container_width=True)
 
-if "Description" in data.columns:
-    top_products = (
-        data.groupby("Description")["TotalPrice"]
-        .sum()
-        .sort_values(ascending=False)
-        .head(10)
-        .reset_index()
-    )
+# ==================== TOP PRODUCTS ====================
+st.subheader("🛍️ Top 10 Products by Revenue")
 
-    fig1 = px.bar(
-        top_products,
-        x="TotalPrice",
-        y="Description",
-        orientation="h",
-        title="Top 10 Products"
-    )
-    st.plotly_chart(fig1, use_container_width=True)
+top_products = (
+    data.groupby("Description")["TotalPrice"]
+    .sum()
+    .sort_values(ascending=False)
+    .head(10)
+    .reset_index()
+)
 
-# ========== SALES OVER TIME ==========
-if "InvoiceDate" in data.columns:
-    st.subheader("📈 Monthly Sales Trend")
+fig_products = px.bar(
+    top_products,
+    x="TotalPrice",
+    y="Description",
+    orientation="h",
+    title="Top Selling Products"
+)
+st.plotly_chart(fig_products, use_container_width=True)
 
-    sales_time = (
-        data.set_index("InvoiceDate")
-        .resample("M")["TotalPrice"]
-        .sum()
-        .reset_index()
-    )
+# ==================== TOP CUSTOMERS ====================
+st.subheader("👑 Top 10 Customers (VIP)")
 
-    fig2 = px.line(
-        sales_time,
-        x="InvoiceDate",
-        y="TotalPrice",
-        title="Monthly Sales"
-    )
-    st.plotly_chart(fig2, use_container_width=True)
+top_customers = (
+    data.groupby("CustomerID")["TotalPrice"]
+    .sum()
+    .sort_values(ascending=False)
+    .head(10)
+    .reset_index()
+)
 
-# ========== TOP CUSTOMERS ==========
-if "CustomerID" in data.columns:
-    st.subheader("👥 Top 10 Customers")
+fig_customers = px.bar(
+    top_customers,
+    x="CustomerID",
+    y="TotalPrice",
+    title="Top Customers by Spending"
+)
+st.plotly_chart(fig_customers, use_container_width=True)
 
-    top_customers = (
-        data.groupby("CustomerID")["TotalPrice"]
-        .sum()
-        .sort_values(ascending=False)
-        .head(10)
-        .reset_index()
-    )
+# ==================== COUNTRY REVENUE MAP ====================
+st.subheader("🌍 Revenue by Country")
 
-    fig3 = px.bar(
-        top_customers,
-        x="CustomerID",
-        y="TotalPrice",
-        title="Top 10 Customers"
-    )
-    st.plotly_chart(fig3, use_container_width=True)
+country_sales = (
+    data.groupby("Country")["TotalPrice"]
+    .sum()
+    .reset_index()
+)
 
-# ========== MARKETING STRATEGY ==========
-st.subheader("🎯 Marketing Strategy Recommendations")
+fig_map = px.choropleth(
+    country_sales,
+    locations="Country",
+    locationmode="country names",
+    color="TotalPrice",
+    title="Revenue Distribution by Country"
+)
+st.plotly_chart(fig_map, use_container_width=True)
+
+# ==================== RFM ANALYSIS (PRO FEATURE) ====================
+st.subheader("⭐ Customer Segmentation (RFM)")
+
+rfm = (
+    data.groupby("CustomerID")
+    .agg({
+        "InvoiceDate": "max",
+        "InvoiceNo": "nunique",
+        "TotalPrice": "sum"
+    })
+    .reset_index()
+)
+
+rfm.columns = ["CustomerID", "LastPurchase", "Frequency", "Monetary"]
+
+rfm["Recency"] = (pd.Timestamp.now() - rfm["LastPurchase"]).dt.days
+
+st.dataframe(rfm.head(20), use_container_width=True)
+
+# ==================== MARKETING STRATEGY ====================
+st.subheader("🎯 Marketing Strategy Dashboard")
 st.dataframe(strategy, use_container_width=True)
 
-if "Segment" in strategy.columns and "Priority_Score" in strategy.columns:
-    fig4 = px.bar(
-        strategy,
-        x="Segment",
-        y="Priority_Score",
-        title="Marketing Strategy Priorities"
-    )
-    st.plotly_chart(fig4, use_container_width=True)
+fig_strategy = px.bar(
+    strategy,
+    x="Segment",
+    y="Priority_Score",
+    title="Marketing Priority by Segment"
+)
+st.plotly_chart(fig_strategy, use_container_width=True)
 
-st.success("🚀 Dashboard Live — المشكلة متاع KeyError محلولة نهائيًا")
+st.success("🔥 PRO Dashboard Live — Business Ready")
