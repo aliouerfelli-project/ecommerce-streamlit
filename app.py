@@ -10,11 +10,8 @@ st.set_page_config(
 
 @st.cache_data
 def load_data():
-    # تحميل الداتا الأصلية من Kaggle
-    url = "https://raw.githubusercontent.com/carrie1/ecommerce-data/master/data.csv"
-    data = pd.read_csv(url, encoding="ISO-8859-1")
-
-    # تحميل ملف الاستراتيجية متاعك
+    # نقرّيو الداتا المصغّرة اللي حطّيتها في GitHub
+    data = pd.read_csv("data_small.csv", encoding="ISO-8859-1")
     strategy = pd.read_csv("marketing_strategy_recommendations.csv")
 
     # تنظيف الداتا
@@ -113,12 +110,16 @@ top_products = (
     .head(10)
 )
 
-fig3 = px.bar(top_products, x="TotalPrice", y="Description", orientation="h")
+fig3 = px.bar(
+    top_products,
+    x="TotalPrice",
+    y="Description",
+    orientation="h"
+)
 st.plotly_chart(fig3, use_container_width=True)
 
 st.markdown("---")
 
-# ===== عرض توصيات التسويق متاعك =====
+# ===== عرض توصيات التسويق =====
 st.subheader("📢 Marketing Strategy Recommendations")
-
 st.dataframe(strategy)
