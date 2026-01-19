@@ -1,178 +1,124 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
-import requests
-from io import StringIO
 
 st.set_page_config(
-    page_title="E-Commerce Business Intelligence Dashboard",
+    page_title="E-Commerce Dashboard",
     page_icon="📊",
     layout="wide"
 )
 
-
-# ==================== LOAD & CLEAN DATA ====================
 @st.cache_data
 def load_data():
+    # تحميل الداتا الأصلية من Kaggle
     url = "https://raw.githubusercontent.com/carrie1/ecommerce-data/master/data.csv"
-    response = requests.get(url)
-    csv_data = StringIO(response.text)
+    data = pd.read_csv(url, encoding="ISO-8859-1")
 
-    data = pd.read_csv(csv_data, encoding="ISO-8859-1")
+    # تحميل ملف الاستراتيجية متاعك
     strategy = pd.read_csv("marketing_strategy_recommendations.csv")
 
-    # CLEANING
-    data.columns = data.columns.str.strip()
+    # تنظيف الداتا
+    data = data.dropna(subset=["CustomerID", "Quantity", "UnitPrice"])
+
+    # فلترة القيم السالبة
     data = data[data["Quantity"] > 0]
     data = data[data["UnitPrice"] > 0]
+
+    # حذف الفواتير الملغاة (اللي تبدأ بـ C)
     data = data[~data["InvoiceNo"].astype(str).str.startswith("C")]
 
-    # FEATURE ENGINEERING
+    # إنشاء عمود المبيعات الإجمالية
     data["TotalPrice"] = data["Quantity"] * data["UnitPrice"]
+
+    # تحويل التاريخ واستخراج الشهر
     data["InvoiceDate"] = pd.to_datetime(data["InvoiceDate"], errors="coerce")
     data["Month"] = data["InvoiceDate"].dt.to_period("M").astype(str)
 
     return data, strategy
 
+# ===== تحميل البيانات =====
 data, strategy = load_data()
 
-# ==================== TITLE ====================
-st.title("🚀 E-Commerce Business Intelligence Dashboard (PRO)")
-st.markdown("""
-**CRISP-DM Deployment | Business Analytics | Marketing Strategy**
-""")
+# ===== العنوان =====
+st.title("📊 E-Commerce Business Intelligence Dashboard")
 
-# ==================== SIDEBAR FILTERS ====================
-st.sidebar.header("🎯 Smart Filters")
-
-countries = sorted(data["Country"].dropna().unique())
-selected_country = st.sidebar.multiselect(
-    "🌍 Select Country",
-    options=countries,
-    default=["United Kingdom"] if "United Kingdom" in countries else []
-)
-
-if selected_country:
-    data = data[data["Country"].isin(selected_country)]
-
-# ==================== KPI SECTION ====================
-st.header("📌 Key Business KPIs")
-
-total_sales = float(data["TotalPrice"].sum())
-num_customers = data["CustomerID"].nunique()
-num_orders = data["InvoiceNo"].nunique()
-avg_order_value = total_sales / num_orders if num_orders > 0 else 0
+# ===== KPI Cards =====
+total_sales = data["TotalPrice"].sum()
+total_orders = data["InvoiceNo"].nunique()
+total_customers = data["CustomerID"].nunique()
+avg_order_value = total_sales / total_orders
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("💰 Total Revenue", f"{total_sales:,.2f}")
-col2.metric("👥 Active Customers", num_customers)
-col3.metric("🧾 Total Orders", num_orders)
-col4.metric("📦 Avg Order Value", f"{avg_order_value:,.2f}")
 
-# ==================== SALES OVER TIME (PRO) ====================
-st.subheader("📈 Revenue Trend (Monthly)")
+col1.metric("💰 Total Sales", f"£{total_sales:,.2f}")
+col2.metric("📦 Total Orders", f"{total_orders:,}")
+col3.metric("👥 Total Customers", f"{total_customers:,}")
+col4.metric("📈 Avg Order Value", f"£{avg_order_value:,.2f}")
 
-sales_time = (
-    data.groupby("Month")["TotalPrice"]
+st.markdown("---")
+
+# ===== Sidebar Filters =====
+st.sidebar.header("🔎 Filters")
+
+country = st.sidebar.multiselect(
+    "Select Country",
+    options=sorted(data["Country"].dropna().unique()),
+    default=None
+)
+
+month = st.sidebar.multiselect(
+    "Select Month",
+    options=sorted(data["Month"].dropna().unique()),
+    default=None
+)
+
+filtered_data = data.copy()
+
+if country:
+    filtered_data = filtered_data[filtered_data["Country"].isin(country)]
+
+if month:
+    filtered_data = filtered_data[filtered_data["Month"].isin(month)]
+
+# ===== الرسوم البيانية =====
+
+st.subheader("📅 Sales by Month")
+sales_by_month = (
+    filtered_data.groupby("Month")["TotalPrice"]
     .sum()
     .reset_index()
 )
 
-fig_trend = px.line(
-    sales_time,
-    x="Month",
-    y="TotalPrice",
-    title="Monthly Revenue Evolution"
+fig1 = px.line(sales_by_month, x="Month", y="TotalPrice")
+st.plotly_chart(fig1, use_container_width=True)
+
+st.subheader("🌍 Sales by Country")
+sales_by_country = (
+    filtered_data.groupby("Country")["TotalPrice"]
+    .sum()
+    .reset_index()
+    .sort_values(by="TotalPrice", ascending=False)
+    .head(10)
 )
-st.plotly_chart(fig_trend, use_container_width=True)
 
-# ==================== TOP PRODUCTS ====================
-st.subheader("🛍️ Top 10 Products by Revenue")
+fig2 = px.bar(sales_by_country, x="Country", y="TotalPrice")
+st.plotly_chart(fig2, use_container_width=True)
 
+st.subheader("🏷️ Top 10 Products by Revenue")
 top_products = (
-    data.groupby("Description")["TotalPrice"]
+    filtered_data.groupby("Description")["TotalPrice"]
     .sum()
-    .sort_values(ascending=False)
+    .reset_index()
+    .sort_values(by="TotalPrice", ascending=False)
     .head(10)
-    .reset_index()
 )
 
-fig_products = px.bar(
-    top_products,
-    x="TotalPrice",
-    y="Description",
-    orientation="h",
-    title="Top Selling Products"
-)
-st.plotly_chart(fig_products, use_container_width=True)
+fig3 = px.bar(top_products, x="TotalPrice", y="Description", orientation="h")
+st.plotly_chart(fig3, use_container_width=True)
 
-# ==================== TOP CUSTOMERS ====================
-st.subheader("👑 Top 10 Customers (VIP)")
+st.markdown("---")
 
-top_customers = (
-    data.groupby("CustomerID")["TotalPrice"]
-    .sum()
-    .sort_values(ascending=False)
-    .head(10)
-    .reset_index()
-)
+# ===== عرض توصيات التسويق متاعك =====
+st.subheader("📢 Marketing Strategy Recommendations")
 
-fig_customers = px.bar(
-    top_customers,
-    x="CustomerID",
-    y="TotalPrice",
-    title="Top Customers by Spending"
-)
-st.plotly_chart(fig_customers, use_container_width=True)
-
-# ==================== COUNTRY REVENUE MAP ====================
-st.subheader("🌍 Revenue by Country")
-
-country_sales = (
-    data.groupby("Country")["TotalPrice"]
-    .sum()
-    .reset_index()
-)
-
-fig_map = px.choropleth(
-    country_sales,
-    locations="Country",
-    locationmode="country names",
-    color="TotalPrice",
-    title="Revenue Distribution by Country"
-)
-st.plotly_chart(fig_map, use_container_width=True)
-
-# ==================== RFM ANALYSIS (PRO FEATURE) ====================
-st.subheader("⭐ Customer Segmentation (RFM)")
-
-rfm = (
-    data.groupby("CustomerID")
-    .agg({
-        "InvoiceDate": "max",
-        "InvoiceNo": "nunique",
-        "TotalPrice": "sum"
-    })
-    .reset_index()
-)
-
-rfm.columns = ["CustomerID", "LastPurchase", "Frequency", "Monetary"]
-
-rfm["Recency"] = (pd.Timestamp.now() - rfm["LastPurchase"]).dt.days
-
-st.dataframe(rfm.head(20), use_container_width=True)
-
-# ==================== MARKETING STRATEGY ====================
-st.subheader("🎯 Marketing Strategy Dashboard")
-st.dataframe(strategy, use_container_width=True)
-
-fig_strategy = px.bar(
-    strategy,
-    x="Segment",
-    y="Priority_Score",
-    title="Marketing Priority by Segment"
-)
-st.plotly_chart(fig_strategy, use_container_width=True)
-
-st.success("🔥 PRO Dashboard Live — Business Ready")
+st.dataframe(strategy)
